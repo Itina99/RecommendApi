@@ -127,6 +127,22 @@ def monument():
         return f"monument with id: {cursor.lastrowid} created succesfully"
 
 
+@app.route('/insert_mon_csv', methods=['POST'])
+def insert_mon_csv():
+    csv_data = request.files['csv_monuments']
+    csv_reader = csv.DictReader(csv_data)
+
+    conn = db_connection()
+    cursor = conn.cursor()
+    for row in csv_reader:
+        cursor.execute(
+            'INSERT INTO monument (name, description, category) VALUES (?, ?, ?)'(row['name'], row['description'],
+                                                                                  row['category']))
+    conn.commit()
+    conn.close()
+    return 'monumnets inserted correctly in the db'
+
+
 @app.route('/interaction', methods=['GET', 'POST'])
 def interaction():
     conn = db_connection()
@@ -217,4 +233,3 @@ if __name__ == '__main__':
     table_creation()
     update_recommendation_db()
     app.run(port=8888)
-
