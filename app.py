@@ -1,3 +1,4 @@
+import pandas as pd
 from flask import *
 import json
 import sqlite3
@@ -5,8 +6,10 @@ from monument_recommendation import Recommendation
 import csv
 import time
 from apscheduler.schedulers.background import BackgroundScheduler
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 
 def table_creation():
@@ -15,7 +18,7 @@ def table_creation():
     cursor.execute(
         "CREATE TABLE IF NOT EXISTS user( id integer PRIMARY KEY, firstname text NOT NULL, lastname text NOT NULL)")
     cursor.execute(
-        "CREATE TABLE IF NOT EXISTS monument( id integer PRIMARY KEY, name text NOT NULL, description text NOT NULL, category text NOT NULL)")
+        "CREATE TABLE IF NOT EXISTS monument( id integer PRIMARY KEY, name text NOT NULL, description text NOT NULL, category text NOT NULL, image text NOT NULL)")
     cursor.execute(
         "CREATE TABLE IF NOT EXISTS interaction (user_id integer NOT NULL,monument_id integer NOT NULL,PRIMARY KEY (user_id, monument_id),FOREIGN KEY (user_id) REFERENCES users(id),FOREIGN KEY (monument_id) REFERENCES monuments(id))")
     cursor.execute(
@@ -33,10 +36,11 @@ def update_recommendation_db():
     # Qui puoi inserire la logica per accedere al database e ottenere la lista degli utenti
     # per ogni utente, chiamare la funzione get_recommendation() e aggiornare i dati nel database
     print("inizio l'update")
-    recommender = Recommendation('data/interaction.csv', 'data/monument.csv')
     conn = db_connection()
     cursor = conn.cursor()
     create_csv(cursor)
+    recommender = Recommendation('data/interaction.csv', 'data/monument.csv')
+
     cursor.execute('BEGIN TRANSACTION')
     cursor.execute("SELECT id FROM user")
     ids = [row[0] for row in cursor.fetchall()]
@@ -111,7 +115,8 @@ def monument():
     monuments = None
     if request.method == 'GET':
         cursor = conn.execute("SELECT * FROM monument")
-        monuments = [dict(id=row[0], name=row[1], description=row[2], category=row[3]) for row in cursor.fetchall()]
+        monuments = [dict(id=row[0], name=row[1], description=row[2], category=row[3], image=[4]) for row in
+                     cursor.fetchall()]
         if monuments is not None:
             return jsonify(monuments)
         else:
@@ -121,7 +126,7 @@ def monument():
         new_name = request.form['name']
         new_description = request.form['description']
         new_category = request.form['category']
-        sql = " INSERT INTO monument (name, description, category) VALUES (?, ?, ?)"
+        sql = " INSERT INTO monument (name, description, category, image) VALUES (?, ?, ?, ?)"
         cursor = cursor.execute(sql, (new_name, new_description, new_category))
         conn.commit()
         return f"monument with id: {cursor.lastrowid} created succesfully"
@@ -130,16 +135,19 @@ def monument():
 @app.route('/insert_mon_csv', methods=['POST'])
 def insert_mon_csv():
     csv_data = request.files['csv_monuments']
-    csv_reader = csv.DictReader(csv_data)
+    monument_df = pd.read_csv(csv_data)
 
     conn = db_connection()
     cursor = conn.cursor()
-    for row in csv_reader:
+    for index, row in monument_df.iterrows():
+        monument_data = (row['name'], row['description'], row['category'], row['image'])
         cursor.execute(
-            'INSERT INTO monument (name, description, category) VALUES (?, ?, ?)'(row['name'], row['description'],
-                                                                                  row['category']))
+            'INSERT INTO monument (name, description, category, image) VALUES (?, ?, ?, ?)', monument_data)
+
     conn.commit()
+
     conn.close()
+
     return 'monumnets inserted correctly in the db'
 
 
@@ -224,9 +232,14 @@ def single_monument(id):
 @app.route('/getRecommendation/<int:id>', methods=['GET'])
 def get_recommendation(id):
     conn = db_connection()
-    cursor = conn.execute("SELECT * FROM recommendation WHERE user_id = ?", (id,))
+    cursor = conn.execute("SELECT r1, r2, r3 FROM recommendation WHERE user_id = ?", (id,))
     data = cursor.fetchone()
-    return jsonify(data)
+    images = []
+    for mon in data:
+        cursor.execute("SELECT image FROM monument WHERE name = ?", (mon,))
+        images.append(cursor.fetchone())
+    to_print = {'monuments': data, 'image': images}
+    return jsonify(to_print)
 
 
 if __name__ == '__main__':
