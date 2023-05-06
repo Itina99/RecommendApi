@@ -16,7 +16,7 @@ def table_creation():
     conn = db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "CREATE TABLE IF NOT EXISTS user( id integer PRIMARY KEY, firstname text NOT NULL, lastname text NOT NULL)")
+        "CREATE TABLE IF NOT EXISTS user( id integer PRIMARY KEY, personal_id integer NOT NULL, firstname text NOT NULL, lastname text NOT NULL)")
     cursor.execute(
         "CREATE TABLE IF NOT EXISTS monument( id integer PRIMARY KEY, name text NOT NULL, description text NOT NULL, category text NOT NULL, image text NOT NULL)")
     cursor.execute(
@@ -95,15 +95,16 @@ def user():
 
     if request.method == 'GET':
         cursor = conn.execute("SELECT * FROM user")
-        users = [dict(id=row[0], firstname=row[1], lastname=row[2]) for row in cursor.fetchall()]
+        users = [dict(id=row[0], pers_id=row[1], firstname=row[2], lastname=row[3]) for row in cursor.fetchall()]
         if users is not None:
             return jsonify(users)
 
     if request.method == 'POST':
+        new_pers_id = request.form['personal_id']
         new_firstname = request.form['firstname']
         new_lastname = request.form['lastname']
-        sql = " INSERT INTO user (firstname, lastname) VALUES (?, ?)"
-        cursor = cursor.execute(sql, (new_firstname, new_lastname))
+        sql = " INSERT INTO user (personal_id, firstname, lastname) VALUES (?, ?, ?)"
+        cursor = cursor.execute(sql, (new_pers_id, new_firstname, new_lastname))
         conn.commit()
         return f"User with id: {cursor.lastrowid} created succesfully"
 
@@ -157,7 +158,7 @@ def interaction():
     cursor = conn.cursor()
 
     if request.method == 'GET':
-        cursor = conn.execute("SELECT * FROM user")
+        cursor = conn.execute("SELECT * FROM interaction")
         interaction = [dict(user_id=row[1], monument_id=row[2]) for row in cursor.fetchall()]
         if interaction is not None:
             return jsonify(interaction)
@@ -171,29 +172,20 @@ def interaction():
         return f"interaction with id: {cursor.lastrowid} created succesfully"
 
 
-@app.route("/user/<int:id>", methods=['GET', 'PUT', 'DELETE'])
+@app.route("/user/<int:id>", methods=['GET', 'DELETE'])
 def single_user(id):
     conn = db_connection()
     cursor = conn.cursor()
     if request.method == 'GET':
-        cursor.execute("SELECT * FROM user WHERE id = ?", (id,))
+        cursor.execute("SELECT * FROM user WHERE personal_id = ?", (id,))
         user = cursor.fetchone()
         if user is not None:
             return jsonify(user), 200
         else:
             return 'User not found', 404
 
-    if request.method == 'PUT':
-        sql = "UPDATE user SET name = ?, age = ? WHERE id = ?"
-        new_firstname = request.form['firstname']
-        new_lastname = request.form['lastname']
-        updated_user = {"id": id, "firstname": new_firstname, "lastname": new_lastname}
-        conn.execute(sql, (new_firstname, new_lastname, id))
-        conn.commit()
-        return jsonify(updated_user), 200
-
     if request.method == 'DELETE':
-        sql = "DELETE FROM user WHERE id=?"
+        sql = "DELETE FROM user WHERE personal_id=?"
         conn.execute(sql, (id,))
         conn.commit()
         return "The user with id {} has been deleted.".format(id), 200
@@ -232,8 +224,11 @@ def single_monument(id):
 @app.route('/getRecommendation/<int:id>', methods=['GET'])
 def get_recommendation(id):
     conn = db_connection()
-    cursor = conn.execute("SELECT r1, r2, r3 FROM recommendation WHERE user_id = ?", (id,))
+    cursor = conn.execute("SELECT id FROM user WHERE personal_id = ?", (id,))
+    user_id = cursor.fetchone()
+    cursor.execute("SELECT r1, r2, r3 FROM recommendation WHERE user_id = ?", (user_id[0],))
     data = cursor.fetchone()
+
     images = []
     for mon in data:
         cursor.execute("SELECT image FROM monument WHERE name = ?", (mon,))
